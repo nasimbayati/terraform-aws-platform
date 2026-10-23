@@ -20,13 +20,6 @@ pr:
   paths:
     include: [envs/*, modules/*, pipelines/*]
 
-parameters:
-  # Flip to true to run on a self-hosted agent in the `Default` pool
-  # (see docs/SETUP.md, "No hosted parallelism yet").
-  - name: selfHosted
-    type: boolean
-    default: false
-
 variables:
   - group: terraform-aws-dev # BACKEND_BUCKET, BACKEND_KMS_KEY_ARN, (secret) TF_VAR_cross_account_external_id
   - name: TF_VERSION
@@ -40,11 +33,10 @@ variables:
   - name: TF_INPUT
     value: "false"
 
+# Microsoft-hosted Linux agent. To use a self-hosted agent instead, replace
+# the vmImage line with `name: Default` (see docs/SETUP.md).
 pool:
-  ${{ if eq(parameters.selfHosted, true) }}:
-    name: Default
-  ${{ else }}:
-    vmImage: ubuntu-latest
+  vmImage: ubuntu-latest
 
 stages:
   # ---------------------------------------------------------------------------
