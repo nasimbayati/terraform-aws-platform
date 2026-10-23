@@ -1,0 +1,22 @@
+# Terraform working files
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfplan
+tfplan
+
+# Local config with account-specific values
+terraform.tfvars
+backend.hcl
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+
+# Tooling
+.venv/
+checkov/
+.DS_Store
+modules/**/.terraform.lock.hcl

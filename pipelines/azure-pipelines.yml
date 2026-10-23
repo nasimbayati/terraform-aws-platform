@@ -1,0 +1,191 @@
+# Terraform pipeline for envs/dev.
+#
+#   Pull request -> Validate -> Plan            (read-only role, plan shown on the run summary)
+#   Merge to main -> Validate -> Plan -> Apply  (Apply waits for a human approval
+#                                                on the `aws-dev` environment)
+#
+# AWS access uses OIDC: the AWS Toolkit task asks Azure DevOps for a short-lived
+# token and trades it for temporary AWS credentials with
+# sts:AssumeRoleWithWebIdentity. There are no access keys anywhere.
+
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include: [envs/*, modules/*, pipelines/*]
+
+pr:
+  branches:
+    include: [main]
+  paths:
+    include: [envs/*, modules/*, pipelines/*]
+
+parameters:
+  # Flip to true to run on a self-hosted agent in the `Default` pool
+  # (see docs/SETUP.md, "No hosted parallelism yet").
+  - name: selfHosted
+    type: boolean
+    default: false
+
+variables:
+  - group: terraform-aws-dev # BACKEND_BUCKET, BACKEND_KMS_KEY_ARN, (secret) TF_VAR_cross_account_external_id
+  - name: TF_VERSION
+    value: "1.16.7"
+  - name: TF_DIR
+    value: envs/dev
+  - name: AWS_REGION
+    value: us-east-1
+  - name: TF_IN_AUTOMATION
+    value: "true"
+  - name: TF_INPUT
+    value: "false"
+
+pool:
+  ${{ if eq(parameters.selfHosted, true) }}:
+    name: Default
+  ${{ else }}:
+    vmImage: ubuntu-latest
+
+stages:
+  # ---------------------------------------------------------------------------
+  - stage: Validate
+    displayName: Format, validate, test, scan
+    jobs:
+      - job: validate
+        steps:
+          - template: templates/install-terraform.yml
+
+          - script: terraform fmt -check -recursive -diff
+            displayName: terraform fmt
+
+          - script: |
+              set -euo pipefail
+              for dir in bootstrap modules/network modules/storage modules/iam envs/dev; do
+                echo "::: $dir"
+                terraform -chdir="$dir" init -backend=false
+                terraform -chdir="$dir" validate
+              done
+            displayName: terraform validate
+
+          # Unit tests run against a mocked AWS provider: no credentials needed.
+          - script: |
+              set -euo pipefail
+              for dir in modules/network modules/storage envs/dev; do
+                echo "::: $dir"
+                terraform -chdir="$dir" test
+              done
+            displayName: terraform test
+
+          # Static security scan. Any new finding fails the build. Accepted
+          # findings are skipped in the code itself with a #checkov:skip
+          # comment that says why, so every exception is reviewed in a PR.
+          - script: |
+              set -euo pipefail
+              python3 -m venv .venv
+              .venv/bin/pip install --quiet checkov
+              .venv/bin/checkov -d . --framework terraform --quiet --skip-path .venv \
+                --output junitxml --output-file-path checkov
+            displayName: checkov scan
+
+          - task: PublishTestResults@2
+            condition: always()
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: checkov/results_junitxml.xml
+              testRunTitle: checkov
+              failTaskOnFailedTests: false
+
+  # ---------------------------------------------------------------------------
+  - stage: Plan
+    dependsOn: Validate
+    jobs:
+      - job: plan
+        steps:
+          - template: templates/install-terraform.yml
+
+          - task: AWSShellScript@1
+            name: tfplan
+            displayName: terraform plan
+            inputs:
+              awsCredentials: aws-plan
+              regionName: $(AWS_REGION)
+              scriptType: inline
+              inlineScript: |
+                set -euo pipefail
+                cd "$(TF_DIR)"
+
+                terraform init \
+                  -backend-config="bucket=$(BACKEND_BUCKET)" \
+                  -backend-config="key=envs/dev/terraform.tfstate" \
+                  -backend-config="region=$(AWS_REGION)" \
+                  -backend-config="kms_key_id=$(BACKEND_KMS_KEY_ARN)"
+
+                # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes.
+                set +e
+                terraform plan -var-file=dev.tfvars -out=tfplan -detailed-exitcode
+                rc=$?
+                set -e
+                if [ "$rc" -eq 1 ]; then exit 1; fi
+
+                hasChanges=$([ "$rc" -eq 2 ] && echo true || echo false)
+                echo "##vso[task.setvariable variable=hasChanges;isOutput=true]$hasChanges"
+
+                # Show the plan on the run's Summary tab so reviewers can read it.
+                {
+                  echo '## Terraform plan (envs/dev)'
+                  echo '```'
+                  terraform show -no-color tfplan
+                  echo '```'
+                } > "$(Agent.TempDirectory)/plan.md"
+                echo "##vso[task.uploadsummary]$(Agent.TempDirectory)/plan.md"
+
+          # Apply uses this exact saved plan, so what was reviewed is what runs.
+          - publish: $(TF_DIR)/tfplan
+            artifact: tfplan
+            displayName: Publish plan
+            condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+  # ---------------------------------------------------------------------------
+  - stage: Apply
+    dependsOn: Plan
+    condition: >-
+      and(
+        succeeded(),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+        ne(variables['Build.Reason'], 'PullRequest'),
+        eq(dependencies.Plan.outputs['plan.tfplan.hasChanges'], 'true')
+      )
+    jobs:
+      # A deployment job targets an Azure DevOps Environment. The approval
+      # check on that environment is what pauses the run for a human.
+      - deployment: apply
+        environment: aws-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - download: current
+                  artifact: tfplan
+                - template: templates/install-terraform.yml
+
+                - task: AWSShellScript@1
+                  displayName: terraform apply
+                  inputs:
+                    awsCredentials: aws-apply
+                    regionName: $(AWS_REGION)
+                    scriptType: inline
+                    inlineScript: |
+                      set -euo pipefail
+                      cd "$(TF_DIR)"
+
+                      terraform init \
+                        -backend-config="bucket=$(BACKEND_BUCKET)" \
+                        -backend-config="key=envs/dev/terraform.tfstate" \
+                        -backend-config="region=$(AWS_REGION)" \
+                        -backend-config="kms_key_id=$(BACKEND_KMS_KEY_ARN)"
+
+                      # If anyone changed state since the plan, Terraform
+                      # refuses a stale plan instead of applying it.
+                      terraform apply "$(Pipeline.Workspace)/tfplan/tfplan"
+                      terraform output

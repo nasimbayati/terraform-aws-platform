@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is git-ignored.
+region                = "us-east-1"
+project               = "platform-demo"
+ado_organization_id   = "00000000-0000-0000-0000-000000000000"
+ado_organization_name = "your-ado-org"
+ado_project_name      = "terraform-aws-platform"

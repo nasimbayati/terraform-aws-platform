@@ -1,0 +1,5 @@
+# Copy to backend.hcl and fill in from `terraform output` in bootstrap/.
+bucket     = "platform-demo-tfstate-<account-id>"
+key        = "envs/dev/terraform.tfstate"
+region     = "us-east-1"
+kms_key_id = "arn:aws:kms:us-east-1:<account-id>:key/<key-id>"

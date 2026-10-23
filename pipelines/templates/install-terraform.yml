@@ -1,0 +1,16 @@
+# Installs a pinned Terraform version and checks its SHA-256 against
+# HashiCorp's published checksums before putting it on PATH.
+steps:
+  - script: |
+      set -euo pipefail
+      cd "$(Agent.TempDirectory)"
+      base="https://releases.hashicorp.com/terraform/$(TF_VERSION)"
+      zip="terraform_$(TF_VERSION)_linux_amd64.zip"
+      curl -fsSLO "$base/$zip"
+      curl -fsSLO "$base/terraform_$(TF_VERSION)_SHA256SUMS"
+      grep " $zip\$" "terraform_$(TF_VERSION)_SHA256SUMS" | sha256sum -c -
+      mkdir -p tfbin && unzip -o -q "$zip" -d tfbin
+      echo "##vso[task.prependpath]$(Agent.TempDirectory)/tfbin"
+    displayName: Install Terraform $(TF_VERSION)
+  - script: terraform version
+    displayName: terraform version
