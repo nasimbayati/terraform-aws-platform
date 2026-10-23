@@ -41,6 +41,12 @@ CloudShell is a terminal inside the AWS console. It already has the credentials 
    TF=1.16.7
    curl -fsSLO https://releases.hashicorp.com/terraform/$TF/terraform_${TF}_linux_amd64.zip
    mkdir -p ~/bin && unzip -o terraform_${TF}_linux_amd64.zip -d ~/bin && rm terraform_${TF}_linux_amd64.zip
+   export PATH=~/bin:$PATH
+   # CloudShell's home folder is 1 GB and the AWS provider plugin is several
+   # hundred MB, so keep Terraform's working data in /tmp. State files still
+   # live in your home folder. After a CloudShell restart, re-run the two
+   # export lines and `terraform init`.
+   export TF_DATA_DIR=/tmp/tf-bootstrap
    terraform version
    ```
 
