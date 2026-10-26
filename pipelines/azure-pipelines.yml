@@ -21,7 +21,7 @@ pr:
     include: [envs/*, modules/*, pipelines/*]
 
 variables:
-  - group: terraform-aws-dev # BACKEND_BUCKET, BACKEND_KMS_KEY_ARN, (secret) TF_VAR_cross_account_external_id
+  - group: terraform-aws-dev # BACKEND_BUCKET, BACKEND_KMS_KEY_ARN, BACKEND_LOCK_TABLE, (secret) TF_VAR_cross_account_external_id
   - name: TF_VERSION
     value: "1.16.7"
   - name: TF_DIR
@@ -110,7 +110,8 @@ stages:
                   -backend-config="bucket=$(BACKEND_BUCKET)" \
                   -backend-config="key=envs/dev/terraform.tfstate" \
                   -backend-config="region=$(AWS_REGION)" \
-                  -backend-config="kms_key_id=$(BACKEND_KMS_KEY_ARN)"
+                  -backend-config="kms_key_id=$(BACKEND_KMS_KEY_ARN)" \
+                  -backend-config="dynamodb_table=$(BACKEND_LOCK_TABLE)"
 
                 # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes.
                 set +e
@@ -175,7 +176,8 @@ stages:
                         -backend-config="bucket=$(BACKEND_BUCKET)" \
                         -backend-config="key=envs/dev/terraform.tfstate" \
                         -backend-config="region=$(AWS_REGION)" \
-                        -backend-config="kms_key_id=$(BACKEND_KMS_KEY_ARN)"
+                        -backend-config="kms_key_id=$(BACKEND_KMS_KEY_ARN)" \
+                        -backend-config="dynamodb_table=$(BACKEND_LOCK_TABLE)"
 
                       # If anyone changed state since the plan, Terraform
                       # refuses a stale plan instead of applying it.

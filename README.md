@@ -2,7 +2,7 @@
 
 A small AWS platform baseline written in Terraform and deployed by an Azure DevOps pipeline.
 
-It builds a two-tier VPC, an S3 bucket encrypted with a customer managed KMS key, IAM roles for EC2 and for cross-account access, and remote state in S3 with native locking. The pipeline runs `plan` on every pull request and `apply` on `main` only after a person approves it. The pipeline reaches AWS through OIDC federation, so there are no AWS access keys anywhere: not in the pipeline, not in the repo, not on a laptop.
+It builds a two-tier VPC, an S3 bucket encrypted with a customer managed KMS key, IAM roles for EC2 and for cross-account access, and remote state in S3 with DynamoDB state locking (plus S3 native locking). The pipeline runs `plan` on every pull request and `apply` on `main` only after a person approves it. The pipeline reaches AWS through OIDC federation, so there are no AWS access keys anywhere: not in the pipeline, not in the repo, not on a laptop.
 
 It is sized for a personal account. With the defaults it costs about **$2 a month** (two KMS keys at $1 each). Everything else is free or within the free tier.
 
@@ -24,6 +24,7 @@ flowchart LR
     subgraph state["Remote state (bootstrap)"]
       sb[("S3 state bucket<br/>versioned, SSE-KMS")]
       sk["KMS key (state)"]
+      lt[("DynamoDB lock table<br/>LockID")]
     end
 
     subgraph vpc["VPC 10.0.0.0/16, 2 AZs"]
@@ -45,6 +46,7 @@ flowchart LR
   a -- "OIDC token" --> oidc
   oidc --> planRole & applyRole
   planRole & applyRole --> sb
+  planRole & applyRole --> lt
   sb -.-> sk
   pub --> igw
   priv --> gwe --> db
@@ -57,7 +59,7 @@ flowchart LR
 
 | Path | What it does |
 |---|---|
-| [`bootstrap/`](bootstrap) | Run once by a person. Creates the state bucket and its KMS key, the OIDC provider that trusts Azure DevOps, and the two pipeline roles. |
+| [`bootstrap/`](bootstrap) | Run once by a person. Creates the state bucket and its KMS key, the DynamoDB lock table, the OIDC provider that trusts Azure DevOps, and the two pipeline roles. |
 | [`modules/network`](modules/network) | VPC, public and private subnets in two AZs, route tables, Internet Gateway, free S3 Gateway Endpoint, a locked-down default security group. NAT Gateway and VPC Flow Logs are optional. |
 | [`modules/storage`](modules/storage) | KMS key with rotation, S3 bucket with SSE-KMS, Bucket Keys, versioning, Block Public Access, ACLs disabled, TLS-only and right-key-only bucket policy, lifecycle rules. |
 | [`modules/iam`](modules/iam) | EC2 role and instance profile with least-privilege access to one prefix of the bucket, plus SSM Session Manager. Optional cross-account read-only role protected by an External ID. |
@@ -88,7 +90,7 @@ Follow [docs/SETUP.md](docs/SETUP.md). In short: bootstrap once from AWS CloudSh
 
 ## Tear it down
 
-From CloudShell as an admin: `terraform -chdir=envs/dev destroy -var-file=dev.tfvars`, then remove `prevent_destroy` in `bootstrap/main.tf`, empty the state bucket, and run `terraform -chdir=bootstrap destroy`. KMS keys wait 7 days before they are deleted.
+From CloudShell as an admin: `terraform -chdir=envs/dev destroy -var-file=dev.tfvars`, then remove `prevent_destroy` and set `deletion_protection_enabled = false` in `bootstrap/main.tf` (apply once), empty the state bucket, and run `terraform -chdir=bootstrap destroy`. KMS keys wait 7 days before they are deleted.
 
 ## What this project does not cover
 

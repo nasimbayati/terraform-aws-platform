@@ -63,7 +63,7 @@ CloudShell is a terminal inside the AWS console. It already has the credentials 
 
    ```bash
    terraform init
-   terraform plan    # read it: 1 OIDC provider, 2 roles, 1 KMS key, 1 bucket and its settings
+   terraform plan    # read it: 1 OIDC provider, 2 roles, 1 KMS key, 1 bucket and its settings, 1 DynamoDB lock table
    terraform apply
    terraform output
    ```
@@ -95,6 +95,7 @@ The names must match exactly. The IAM trust policies only accept tokens whose su
 1. **Pipelines > Library > + Variable group**, named `terraform-aws-dev`, with:
    - `BACKEND_BUCKET` = `state_bucket` output
    - `BACKEND_KMS_KEY_ARN` = `state_kms_key_arn` output
+   - `BACKEND_LOCK_TABLE` = `lock_table` output
    - Optional, only if you turn on the cross-account role: `TF_VAR_cross_account_external_id` with a random value of 16+ characters, marked secret (lock icon).
 2. **Pipelines > Environments > New environment**, named `aws-dev`, resource **None**. Open it, then **... > Approvals and checks > Approvals**, and add yourself as the approver.
 

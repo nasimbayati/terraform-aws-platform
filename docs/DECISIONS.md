@@ -4,8 +4,8 @@ Each decision lists what was chosen, why, and what it costs. These are the trade
 
 ## State and locking
 
-**S3 backend with native locking (`use_lockfile = true`), not a DynamoDB table.**
-Since Terraform 1.10 the S3 backend can lock by writing a `.tflock` object with an S3 conditional write. The DynamoDB lock table that most tutorials still show is deprecated. One fewer resource, one fewer IAM permission set, same protection: two runs can't write state at the same time.
+**S3 backend with a DynamoDB lock table, plus S3 native locking.**
+The lock table (`platform-demo-tflock`, on-demand billing, `LockID` string key, encrypted with the state KMS key, point-in-time recovery and deletion protection on) is the long-standing pattern most teams run: before touching state, Terraform does a conditional `PutItem` of `LockID = <bucket>/<key>`, and a second run fails to get it. `use_lockfile = true` adds Terraform 1.10's S3 native lock (a `.tflock` object written with an S3 conditional write). With both set, a run must win both locks. HashiCorp now marks `dynamodb_table` as deprecated in favour of `use_lockfile`, so running both is also the documented migration path: once every consumer is on 1.10+, drop the table.
 
 **The state bucket has its own KMS key, versioning, and `prevent_destroy`.**
 State files often hold secrets (generated passwords, connection strings), so they are encrypted with a key only the pipeline roles and admins can use. Versioning means a corrupted state can be rolled back. `prevent_destroy` stops an accidental `terraform destroy` from deleting the one thing you can't rebuild.

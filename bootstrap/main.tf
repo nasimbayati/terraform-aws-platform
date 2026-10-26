@@ -175,6 +175,37 @@ resource "aws_s3_bucket_policy" "state" {
 }
 
 # ---------------------------------------------------------------------------
+# State locking: DynamoDB lock table
+# ---------------------------------------------------------------------------
+#
+# Terraform writes one item (LockID = "<bucket>/<key>") before it touches
+# state and deletes it afterwards, using a conditional write so only one run
+# can hold the lock. envs/dev enables this alongside S3 native locking
+# (use_lockfile), so a run must win both locks before it can write state.
+
+resource "aws_dynamodb_table" "lock" {
+  name         = "${var.project}-tflock"
+  billing_mode = "PAY_PER_REQUEST" # no idle cost; a lock is a few requests per run
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.state.arn
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
+}
+
+# ---------------------------------------------------------------------------
 # Azure DevOps -> AWS federation (OIDC, no long-lived access keys)
 # ---------------------------------------------------------------------------
 
@@ -238,8 +269,20 @@ data "aws_iam_policy_document" "state_access" {
       "kms:Decrypt",
       "kms:Encrypt",
       "kms:GenerateDataKey",
+      "kms:DescribeKey",
     ]
     resources = [aws_kms_key.state.arn]
+  }
+
+  statement {
+    sid = "UseLockTable"
+    actions = [
+      "dynamodb:DescribeTable",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+    ]
+    resources = [aws_dynamodb_table.lock.arn]
   }
 }
 

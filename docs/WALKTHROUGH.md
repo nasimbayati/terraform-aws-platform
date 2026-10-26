@@ -4,7 +4,7 @@
 
 > I built a small AWS platform baseline in Terraform and deploy it with Azure DevOps. There's a two-AZ VPC with public and private subnets, where the private subnets have no internet route and reach S3 through a free gateway endpoint. There's an S3 bucket encrypted with a customer managed KMS key, with a bucket policy that enforces TLS, the right key, and VPC-only access for the app role. IAM has an EC2 role with an instance profile scoped to one prefix, and an optional cross-account read-only role protected by an External ID.
 >
-> State lives in a versioned, KMS-encrypted S3 bucket with S3 native locking, which replaced the old DynamoDB lock table in Terraform 1.10. The pipeline authenticates to AWS with OIDC, so there are no access keys. Pull requests get a plan from a read-only role. On main, the saved plan waits for an approval and then a separate, scoped role applies exactly that plan. Every run also does fmt, validate, offline `terraform test` with a mocked provider, and a checkov scan that fails on new findings.
+> State lives in a versioned, KMS-encrypted S3 bucket, locked with a DynamoDB lock table plus S3 native locking from Terraform 1.10. The pipeline authenticates to AWS with OIDC, so there are no access keys. Pull requests get a plan from a read-only role. On main, the saved plan waits for an approval and then a separate, scoped role applies exactly that plan. Every run also does fmt, validate, offline `terraform test` with a mocked provider, and a checkov scan that fails on new findings.
 
 ## Walking through the code (in this order)
 
@@ -21,7 +21,10 @@
 State maps the resources in your code to real resource IDs in AWS, so Terraform knows what to change. Local state can't be shared, gets lost with a laptop, and has no locking. Remote state in S3 is shared, versioned, encrypted, and locked during writes.
 
 **How does locking work here?**
-`use_lockfile = true`. Before a write, Terraform creates `<key>.tflock` in the bucket using a conditional put that fails if the object already exists. A second run sees the lock and waits or fails. Before Terraform 1.10 you needed a DynamoDB table for this, and that option is now deprecated.
+Two locks. A DynamoDB table (`platform-demo-tflock`, partition key `LockID`): before reading or writing state, Terraform does a conditional `PutItem` with `LockID = <bucket>/<key>` and the run's ID, user and time, and deletes the item when it finishes. A second run's conditional write fails, so it waits (`-lock-timeout`) or errors and shows who holds the lock. On top of that, `use_lockfile = true` turns on S3 native locking from Terraform 1.10: a `<key>.tflock` object written with an S3 conditional put. HashiCorp has deprecated the DynamoDB option in favour of S3 native locking, so this setup is also how you migrate: run both, then remove the table.
+
+**Why on-demand billing for the lock table?**
+A lock is a handful of requests per run. Provisioned capacity would cost money while idle; PAY_PER_REQUEST costs fractions of a cent.
 
 **What happens if two engineers run apply at once?**
 The second one fails to get the lock. If a run crashes and leaves a lock behind, `terraform force-unlock <id>`, but only after checking that nobody is actually running.

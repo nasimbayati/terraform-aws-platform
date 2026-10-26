@@ -8,6 +8,11 @@ output "state_kms_key_arn" {
   value       = aws_kms_key.state.arn
 }
 
+output "lock_table" {
+  description = "Put this in the BACKEND_LOCK_TABLE pipeline variable and in envs/dev/backend.hcl as `dynamodb_table`."
+  value       = aws_dynamodb_table.lock.name
+}
+
 output "plan_role_arn" {
   description = "Role ARN for the `aws-plan` service connection in Azure DevOps."
   value       = aws_iam_role.plan.arn
