@@ -90,7 +90,7 @@ Follow [docs/SETUP.md](docs/SETUP.md). In short: bootstrap once from AWS CloudSh
 
 ## Tear it down
 
-From CloudShell as an admin: `terraform -chdir=envs/dev destroy -var-file=dev.tfvars`, then remove `prevent_destroy` and set `deletion_protection_enabled = false` in `bootstrap/main.tf` (apply once), empty the state bucket, and run `terraform -chdir=bootstrap destroy`. KMS keys wait 7 days before they are deleted.
+Follow [docs/TEARDOWN.md](docs/TEARDOWN.md). Order matters: destroy `envs/dev` first, then the bootstrap stack. Never delete the state bucket by hand.
 
 ## What this project does not cover
 
