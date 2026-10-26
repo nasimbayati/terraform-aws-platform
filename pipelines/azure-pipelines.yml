@@ -36,7 +36,7 @@ variables:
 # Microsoft-hosted Linux agent. To use a self-hosted agent instead, replace
 # the vmImage line with `name: Default` (see docs/SETUP.md).
 pool:
-  vmImage: ubuntu-latest
+  vmImage: ubuntu-24.04 # pinned so image upgrades are a reviewed change
 
 stages:
   # ---------------------------------------------------------------------------

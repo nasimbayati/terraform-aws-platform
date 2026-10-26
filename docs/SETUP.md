@@ -112,7 +112,7 @@ After it finishes, open the AWS console and look at the VPC, the bucket's **Prop
 
 If the run fails with "No hosted parallelism has been purchased or granted", the organization needs the free grant of Microsoft-hosted minutes. Request it at <https://aka.ms/azpipelines-parallelism-request>. Approval can take a few business days.
 
-To keep going meanwhile, run a self-hosted agent. The pipeline scripts use bash, so on Windows install the agent inside WSL (Ubuntu): **Project settings > Agent pools > Default > New agent > Linux**, follow the commands, and then change `vmImage: ubuntu-latest` to `name: Default` under `pool:` in `pipelines/azure-pipelines.yml`.
+To keep going meanwhile, run a self-hosted agent. The pipeline scripts use bash, so on Windows install the agent inside WSL (Ubuntu): **Project settings > Agent pools > Default > New agent > Linux**, follow the commands, and then change the `vmImage:` line to `name: Default` under `pool:` in `pipelines/azure-pipelines.yml`.
 
 ## 7. Show it working
 
